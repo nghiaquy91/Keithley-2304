@@ -1,5 +1,5 @@
 import sys
-import visa
+import pyvisa as visa
 import time
 from PyQt5.QtWidgets import QDialog, QApplication
 from keithley2304 import *
@@ -49,7 +49,7 @@ class MyForm(QDialog):
         self.ui.setupUi(self)
         # connect to functions
         self.ui.pushButtonConnect.clicked.connect(self.GPIBconnect)
-        self.ui.pushButtonDisconnect.clicked.connect(self.GPIBdisconnect)
+        self.ui.pushButtonSendConfig.clicked.connect(self.sendConfig)
         self.ui.pushButtonON.clicked.connect(self.outputOn)
         self.ui.pushButtonOFF.clicked.connect(self.outputOff)
         self.ui.pushButtonStartRecord.clicked.connect(self.recordStart)
@@ -100,25 +100,26 @@ class MyForm(QDialog):
             try:
                 global MODEL_2304
                 MODEL_2304 = rm.open_resource('GPIB0::' + str(keithley.GPIBAddress) + '::INSTR')
-                MODEL_2304.write(':SOURce:VOLTage:LEVel:IMMediate:AMPLitude %G' % (keithley.voltage))
-                MODEL_2304.write(':OUTPut:STATe %d' % (0))
-                MODEL_2304.write(':SOURce:CURRent:LIMit:VALue ' + str(keithley.currentLimit) + '')
-                # MODEL_2304.write(':SENSe[1]:NPLCycles ' + str(keithley.interCycle) + '')
-                MODEL_2304.write(':SENSe[1]:NPLCycles 0.01')
                 MODEL_2304.write(':DISPlay:ENABle ON')
                 keithley.connected = 1
                 self.ui.labelConnectStatus.setText("Connected successfully to Keithley 2304")
             except:
                 self.ui.labelConnectStatus.setText("Error to connect Keithley 2304")
 
-    def GPIBdisconnect(self):
+    def sendConfig(self):
         try:
+            if keithley.connected == 0 or keithley.outputStatus == 1:
+                self.ui.labelConnectStatus.setText("Please connect and turn OFF Keithley!!!")
+                return
+            MODEL_2304.write(':SOURce:VOLTage:LEVel:IMMediate:AMPLitude %G' % (keithley.voltage))
+            MODEL_2304.write(':OUTPut:STATe %d' % (0))
+            MODEL_2304.write(':SOURce:CURRent:LIMit:VALue ' + str(keithley.currentLimit) + '')
+            # MODEL_2304.write(':SENSe[1]:NPLCycles ' + str(keithley.interCycle) + '')
+            MODEL_2304.write(':SENSe[1]:NPLCycles 0.01')
             MODEL_2304.write(':DISPlay:ENABle ON')
-            rm.close()
-            keithley.connected = 0
-            self.ui.labelConnectStatus.setText("Disconnected successfully from Keithley 2304")
+            self.ui.labelConnectStatus.setText("Final send config to Keithley 2304")
         except:
-            self.ui.labelConnectStatus.setText("Error to disconnect from Keithley 2304")
+            self.ui.labelConnectStatus.setText("Error to send config to Keithley 2304")
 
     def outputOn(self):
         if keithley.connected:
@@ -151,6 +152,10 @@ class MyForm(QDialog):
         else:
             sampleNumber = int(int(self.ui.lineEditPeriod.text()) * 1000 / 35)
         try:
+            # Set default 3.7V to measure
+            MODEL_2304.write(':SOURce:VOLTage:LEVel:IMMediate:AMPLitude %G' % (3.7))
+            self.ui.lineEditVoltage.setText('3.7')
+
             MODEL_2304.write(':OUTPut:STATe %d' % (1))
             MODEL_2304.write(':DISPlay:ENABle OFF')
             curr_data = createList(sampleNumber)
@@ -166,22 +171,6 @@ class MyForm(QDialog):
         except:
             self.ui.labelRecordStatus.setText("Error while recording")
             return
-        # writing file
-        now = datetime.now()
-        dt_string = now.strftime("%Y_%m_%d_%H_%M_%S") + '.txt'
-        save_path = 'D:/OneDrive/Python/Keithley/Log'
-        filename = os.path.join(save_path, self.ui.lineEditFileName.text() + '_' + dt_string)
-        try:
-            f = open(filename, "w")
-            i = 0
-            while (i < sampleNumber):
-                f.write(str(curr_data[i]))
-                i = i + 1
-        except:
-            self.ui.labelRecordStatus.setText("Error while writing data file")
-        finally:
-            f.close()
-        self.ui.labelRecordStatus.setText("Congratulation! Finish Recording in " + total_time + ' s')
 
         # Caculate Results
         curr_data_float = convertListToFloat(curr_data, sampleNumber)
@@ -196,6 +185,24 @@ class MyForm(QDialog):
         self.ui.lineEditMaxCurrent.setText(str(round(maxCurrent, 2)))
         self.ui.lineEditAvarCurrent.setText(str(round(avarCurrent, 2)))
         self.ui.lineEditBatLife.setText(str(batLifeHours))
+
+        # writing file
+        now = datetime.now()
+        dt_string = now.strftime("%Y_%m_%d_%H_%M_%S") + '.txt'
+        save_path = 'D:/OneDrive/Python/pythonProject/Log'
+
+        filename = os.path.join(save_path, self.ui.lineEditFileName.text() + '_' + dt_string)
+        try:
+            f = open(filename, "w")
+            i = 0
+            while (i < sampleNumber):
+                f.write(str(curr_data[i]))
+                i = i + 1
+        except:
+            self.ui.labelRecordStatus.setText("Error while writing data file")
+        finally:
+            f.close()
+        self.ui.labelRecordStatus.setText("Congratulation! Finish Recording in " + total_time + ' s')
 
         # Plot chart
         pass
