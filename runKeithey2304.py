@@ -1,7 +1,10 @@
 import sys
 import pyvisa as visa
 import time
-from PyQt5.QtWidgets import QDialog, QApplication
+from PyQt5.QtWidgets import QDialog, QApplication, QMainWindow
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtChart import *
 from keithley2304 import *
 from datetime import datetime
 import os.path
@@ -41,6 +44,35 @@ def convertListToFloat(listData, num):
         i += 1
     return dataFloat
 
+class LineChartWindow (QMainWindow):
+    def __init__(self):
+        super().__init__()
+        # draw line chart
+        self.setWindowTitle("Current Chart")
+        self.setGeometry(100, 100, 680, 500)
+    # Create a line chart
+    def createLineChart(self, dataList, number):
+        series = QLineSeries(self)
+        i = 0
+        while i < number:
+            series.append(i*38, 1000*dataList[i])
+            i += 1
+
+        chart = QChart()
+
+        chart.addSeries(series)
+        chart.createDefaultAxes()
+        chart.axisX().setTitleText("ms")
+        chart.axisY().setTitleText("mA")
+        chart.setAnimationOptions(QChart.SeriesAnimations)
+        chart.setTitle("Current vs Time")
+
+        chart.legend().setVisible(True)
+        chart.legend().setAlignment(Qt.AlignBottom)
+
+        chartview = QChartView(chart)
+        chartview.setRenderHint(QPainter.Antialiasing)
+        self.setCentralWidget(chartview)
 
 class MyForm(QDialog):
     def __init__(self):
@@ -56,6 +88,7 @@ class MyForm(QDialog):
         self.ui.pushButtonStopRecord.clicked.connect(self.recordStop)
         self.ui.checkBoxTimestampName.stateChanged.connect(self.timeName)
         # end functions
+        self.w = LineChartWindow()
         self.show()
 
     # Check GPIB parameter
@@ -72,7 +105,7 @@ class MyForm(QDialog):
     # Check Voltage Parameter
     def checkVoltageParam(self):
         if (len(self.ui.lineEditVoltage.text()) == 0) or (float(self.ui.lineEditVoltage.text()) > 20):
-            self.ui.lineEditVoltage.setText('3.7')
+            self.ui.lineEditVoltage.setText('3.8')
         keithley.voltage = float(self.ui.lineEditVoltage.text())
         return 1
 
@@ -141,7 +174,7 @@ class MyForm(QDialog):
         pass
 
     def recordStart(self):
-        if keithley.connected == 0 or keithley.outputStatus == 0:
+        if keithley.connected == 0:
             self.ui.labelRecordStatus.setText("Please connect to Keithley and On Output")
             return
 
@@ -150,12 +183,8 @@ class MyForm(QDialog):
             self.ui.lineEditPeriod.setText('600')
             sampleNumber = 600
         else:
-            sampleNumber = int(int(self.ui.lineEditPeriod.text()) * 1000 / 35)
+            sampleNumber = int(int(self.ui.lineEditPeriod.text()) * 1000 / 38)
         try:
-            # Set default 3.7V to measure
-            MODEL_2304.write(':SOURce:VOLTage:LEVel:IMMediate:AMPLitude %G' % (3.7))
-            self.ui.lineEditVoltage.setText('3.7')
-
             MODEL_2304.write(':OUTPut:STATe %d' % (1))
             MODEL_2304.write(':DISPlay:ENABle OFF')
             curr_data = createList(sampleNumber)
@@ -205,7 +234,9 @@ class MyForm(QDialog):
         self.ui.labelRecordStatus.setText("Congratulation! Finish Recording in " + total_time + ' s')
 
         # Plot chart
-        pass
+        self.w = LineChartWindow()
+        self.w.createLineChart(curr_data_float, sampleNumber)
+        self.w.show()
 
     def recordStop(self):
         pass
