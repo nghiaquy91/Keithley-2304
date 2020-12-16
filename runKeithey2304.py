@@ -1,11 +1,11 @@
 import sys
 import pyvisa as visa
 import time
-from PyQt5.QtWidgets import QDialog, QApplication, QMainWindow
-from PyQt5.QtGui import *
-from PyQt5.QtCore import *
-from PyQt5.QtChart import *
+import threading
+from PyQt5.QtWidgets import QDialog, QApplication
 from keithley2304 import *
+from lineChart import *
+from utilList import *
 from datetime import datetime
 import os.path
 
@@ -22,57 +22,76 @@ class KeithleyStatus:
     def __init__(self):
         pass
 
-
+# resource init
 keithley = KeithleyStatus()
 global rm
 rm = visa.ResourceManager()
 
+class recordThread(threading.Thread):
+    def __init__(self, w):
+        threading.Thread.__init__(self)
+        self.w = w
+    def run(self):
+        print("Recording Thread in running!")
+        global sampleNumber
+        if len(w.ui.lineEditPeriod.text()) == 0:
+            w.ui.lineEditPeriod.setText('600')
+            sampleNumber = 600
+        else:
+            sampleNumber = int(int(w.ui.lineEditPeriod.text()) * 1000 / 38)
+        try:
+            MODEL_2304.write(':OUTPut:STATe %d' % (1))
+            MODEL_2304.write(':DISPlay:ENABle OFF')
+            curr_data = createList(sampleNumber)
+            i = 0
+            start = time.time_ns()
+            while (i < sampleNumber):
+                # curr_data[i] = MODEL_2304.query(':READ?')
+                curr_data[i] = MODEL_2304.query(':MEASure:CURRent?')
+                i += 1
+            stop = time.time_ns()
+            total_time = str(int((stop - start) / 1000000000))
+        except:
+            w.ui.labelRecordStatus.setText("Error while recording")
+            return
 
-def createList(num):
-    listData = []
-    while num > 0:
-        listData.append(0)
-        num = num - 1
-    return listData
+        # Caculate Results
+        curr_data_float = convertListToFloat(curr_data, sampleNumber)
+        avarCurrent = sum(curr_data_float) * 1000 / sampleNumber
+        maxCurrent = max(curr_data_float) * 1000
+        minCurrent = min(curr_data_float) * 1000
+        batLifeHours = round(1250 / avarCurrent, 2)
+        total_results = sampleNumber
+        w.ui.lineEditTotalTime.setText(total_time)
+        w.ui.lineEditTotalResults.setText(str(total_results))
+        w.ui.lineEditMinCurrent.setText(str(round(minCurrent, 2)))
+        w.ui.lineEditMaxCurrent.setText(str(round(maxCurrent, 2)))
+        w.ui.lineEditAvarCurrent.setText(str(round(avarCurrent, 2)))
+        w.ui.lineEditBatLife.setText(str(batLifeHours))
 
+        # writing file
+        now = datetime.now()
+        dt_string = now.strftime("%Y_%m_%d_%H_%M_%S") + '.txt'
+        save_path = 'D:/OneDrive/Python/pythonProject/Log'
 
-def convertListToFloat(listData, num):
-    dataFloat = []
-    i = 0
-    while i < num:
-        dataFloat.append(float(listData[i]))
-        i += 1
-    return dataFloat
+        filename = os.path.join(save_path, w.ui.lineEditFileName.text() + '_' + dt_string)
+        try:
+            f = open(filename, "w")
+            i = 0
+            while (i < sampleNumber):
+                f.write(str(curr_data[i]))
+                i = i + 1
+        except:
+            w.ui.labelRecordStatus.setText("Error while writing data file")
+        finally:
+            f.close()
+        w.ui.labelRecordStatus.setText("Congratulation! Finish Recording in " + total_time + ' s')
 
-class LineChartWindow (QMainWindow):
-    def __init__(self):
-        super().__init__()
-        # draw line chart
-        self.setWindowTitle("Current Chart")
-        self.setGeometry(100, 100, 680, 500)
-    # Create a line chart
-    def createLineChart(self, dataList, number):
-        series = QLineSeries(self)
-        i = 0
-        while i < number:
-            series.append(i*38, 1000*dataList[i])
-            i += 1
+        # Plot chart
+        w.w = LineChartWindow()
+        w.w.createLineChart(curr_data_float, sampleNumber)
+        w.w.show()
 
-        chart = QChart()
-
-        chart.addSeries(series)
-        chart.createDefaultAxes()
-        chart.axisX().setTitleText("ms")
-        chart.axisY().setTitleText("mA")
-        chart.setAnimationOptions(QChart.SeriesAnimations)
-        chart.setTitle("Current vs Time")
-
-        chart.legend().setVisible(True)
-        chart.legend().setAlignment(Qt.AlignBottom)
-
-        chartview = QChartView(chart)
-        chartview.setRenderHint(QPainter.Antialiasing)
-        self.setCentralWidget(chartview)
 
 class MyForm(QDialog):
     def __init__(self):
@@ -177,66 +196,10 @@ class MyForm(QDialog):
         if keithley.connected == 0:
             self.ui.labelRecordStatus.setText("Please connect to Keithley and On Output")
             return
-
-        global sampleNumber
-        if len(self.ui.lineEditPeriod.text()) == 0:
-            self.ui.lineEditPeriod.setText('600')
-            sampleNumber = 600
-        else:
-            sampleNumber = int(int(self.ui.lineEditPeriod.text()) * 1000 / 38)
-        try:
-            MODEL_2304.write(':OUTPut:STATe %d' % (1))
-            MODEL_2304.write(':DISPlay:ENABle OFF')
-            curr_data = createList(sampleNumber)
-            self.ui.labelRecordStatus.setText("Recording...........")
-            i = 0
-            start = time.time_ns()
-            while (i < sampleNumber):
-                # curr_data[i] = MODEL_2304.query(':READ?')
-                curr_data[i] = MODEL_2304.query(':MEASure:CURRent?')
-                i += 1
-            stop = time.time_ns()
-            total_time = str(int((stop - start) / 1000000000))
-        except:
-            self.ui.labelRecordStatus.setText("Error while recording")
-            return
-
-        # Caculate Results
-        curr_data_float = convertListToFloat(curr_data, sampleNumber)
-        avarCurrent = sum(curr_data_float) * 1000 / sampleNumber
-        maxCurrent = max(curr_data_float) * 1000
-        minCurrent = min(curr_data_float) * 1000
-        batLifeHours = round(1250 / avarCurrent, 2)
-        total_results = sampleNumber
-        self.ui.lineEditTotalTime.setText(total_time)
-        self.ui.lineEditTotalResults.setText(str(total_results))
-        self.ui.lineEditMinCurrent.setText(str(round(minCurrent, 2)))
-        self.ui.lineEditMaxCurrent.setText(str(round(maxCurrent, 2)))
-        self.ui.lineEditAvarCurrent.setText(str(round(avarCurrent, 2)))
-        self.ui.lineEditBatLife.setText(str(batLifeHours))
-
-        # writing file
-        now = datetime.now()
-        dt_string = now.strftime("%Y_%m_%d_%H_%M_%S") + '.txt'
-        save_path = 'D:/OneDrive/Python/pythonProject/Log'
-
-        filename = os.path.join(save_path, self.ui.lineEditFileName.text() + '_' + dt_string)
-        try:
-            f = open(filename, "w")
-            i = 0
-            while (i < sampleNumber):
-                f.write(str(curr_data[i]))
-                i = i + 1
-        except:
-            self.ui.labelRecordStatus.setText("Error while writing data file")
-        finally:
-            f.close()
-        self.ui.labelRecordStatus.setText("Congratulation! Finish Recording in " + total_time + ' s')
-
-        # Plot chart
-        self.w = LineChartWindow()
-        self.w.createLineChart(curr_data_float, sampleNumber)
-        self.w.show()
+        self.ui.labelRecordStatus.setText("Recording...........")
+        # run record Thread
+        newThread = recordThread(self)
+        newThread.run()
 
     def recordStop(self):
         pass
