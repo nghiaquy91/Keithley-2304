@@ -2,6 +2,7 @@ import sys
 import pyvisa as visa
 import time
 import threading
+import pathlib
 from PyQt5.QtWidgets import QDialog, QApplication
 from keithley2304 import *
 from lineChart import *
@@ -72,8 +73,8 @@ class recordThread(threading.Thread):
         # writing file
         now = datetime.now()
         dt_string = now.strftime("%Y_%m_%d_%H_%M_%S") + '.txt'
-        save_path = 'D:/OneDrive/Python/pythonProject/Log'
-
+        nl_path = os.path.normpath(os.path.join(pathlib.Path().absolute(),"Log"))
+        save_path = nl_path.replace("\\","/")
         filename = os.path.join(save_path, w.ui.lineEditFileName.text() + '_' + dt_string)
         try:
             f = open(filename, "w")
