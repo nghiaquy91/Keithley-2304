@@ -14,7 +14,7 @@ class LineChartWindow (QMainWindow):
         series = QLineSeries(self)
         i = 0
         while i < number:
-            series.append(i*38, 1000*dataList[i])
+            series.append(i*31, 1000*dataList[i])
             i += 1
 
         chart = QChart()

@@ -39,16 +39,20 @@ class recordThread(threading.Thread):
             w.ui.lineEditPeriod.setText('600')
             sampleNumber = 600
         else:
-            sampleNumber = int(int(w.ui.lineEditPeriod.text()) * 1000 / 38)
+            sampleNumber = int(int(w.ui.lineEditPeriod.text()) * 1000 / 31)
         try:
             MODEL_2304.write(':OUTPut:STATe %d' % (1))
             MODEL_2304.write(':DISPlay:ENABle OFF')
+            # Config data output while executing READ? command
+            MODEL_2304.write(':FORMart:CURRent?')
+            # Change current range following the configuration
+            w.change_current_range()
             curr_data = createList(sampleNumber)
             i = 0
             start = time.time_ns()
             while (i < sampleNumber):
-                # curr_data[i] = MODEL_2304.query(':READ?')
-                curr_data[i] = MODEL_2304.query(':MEASure:CURRent?')
+                curr_data[i] = MODEL_2304.query(':READ?')
+                #curr_data[i] = MODEL_2304.query(':MEAS:CURR?')
                 i += 1
             stop = time.time_ns()
             total_time = str(int((stop - start) / 1000000000))
@@ -61,13 +65,20 @@ class recordThread(threading.Thread):
         avarCurrent = sum(curr_data_float) * 1000 / sampleNumber
         maxCurrent = max(curr_data_float) * 1000
         minCurrent = min(curr_data_float) * 1000
-        batLifeHours = round(1250 / avarCurrent, 2)
+        if w.ui.comboBoxCurrentRange.currentText() == "500 mA":
+            error_current = 0.002 * avarCurrent + 0.04
+        else:
+            error_current = 0.002 * avarCurrent + 0.4
+        if avarCurrent != 0:
+            batLifeHours = round(1250 / avarCurrent, 2)
+        else:
+            batLifeHours = 9999999
         total_results = sampleNumber
         w.ui.lineEditTotalTime.setText(total_time)
         w.ui.lineEditTotalResults.setText(str(total_results))
         w.ui.lineEditMinCurrent.setText(str(round(minCurrent, 2)))
         w.ui.lineEditMaxCurrent.setText(str(round(maxCurrent, 2)))
-        w.ui.lineEditAvarCurrent.setText(str(round(avarCurrent, 2)))
+        w.ui.lineEditAvarCurrent.setText(str(round(avarCurrent, 2)) + '+-(' + str(round(error_current, 2)) + ')')
         w.ui.lineEditBatLife.setText(str(batLifeHours))
 
         # writing file
@@ -97,7 +108,7 @@ class recordThread(threading.Thread):
 class MyForm(QDialog):
     def __init__(self):
         super().__init__()
-        self.ui = Ui_Dialog()
+        self.ui = Ui_Ginno_Keithley()
         self.ui.setupUi(self)
         # connect to functions
         self.ui.pushButtonConnect.clicked.connect(self.GPIBconnect)
@@ -106,7 +117,7 @@ class MyForm(QDialog):
         self.ui.pushButtonOFF.clicked.connect(self.outputOff)
         self.ui.pushButtonStartRecord.clicked.connect(self.recordStart)
         self.ui.pushButtonStopRecord.clicked.connect(self.recordStop)
-        self.ui.checkBoxTimestampName.stateChanged.connect(self.timeName)
+        self.ui.comboBoxCurrentRange.currentIndexChanged.connect(self.change_current_range)
         # end functions
         self.w = LineChartWindow()
         self.show()
@@ -164,11 +175,11 @@ class MyForm(QDialog):
             if keithley.connected == 0 or keithley.outputStatus == 1:
                 self.ui.labelConnectStatus.setText("Please connect and turn OFF Keithley!!!")
                 return
-            MODEL_2304.write(':SOURce:VOLTage:LEVel:IMMediate:AMPLitude %G' % (keithley.voltage))
+            MODEL_2304.write(':SOURce:VOLTage ' + str(keithley.voltage))
             MODEL_2304.write(':OUTPut:STATe %d' % (0))
-            MODEL_2304.write(':SOURce:CURRent:LIMit:VALue ' + str(keithley.currentLimit) + '')
-            # MODEL_2304.write(':SENSe[1]:NPLCycles ' + str(keithley.interCycle) + '')
-            MODEL_2304.write(':SENSe[1]:NPLCycles 0.01')
+            MODEL_2304.write(':SOURce:CURRent ' + str(keithley.currentLimit))
+            MODEL_2304.write(':SENSe:NPLCycles ' + str(keithley.interCycle))
+            MODEL_2304.write(':SENSe:AVERage 1')
             MODEL_2304.write(':DISPlay:ENABle ON')
             self.ui.labelConnectStatus.setText("Final send config to Keithley 2304")
         except:
@@ -205,12 +216,23 @@ class MyForm(QDialog):
     def recordStop(self):
         pass
 
-    def timeName(self):
+    def change_current_range(self):
+        if keithley.connected == 0:
+            self.ui.labelConnectStatus.setText("Please connect to Keithley!!!")
+            return
+        if self.ui.comboBoxCurrentRange.currentText() == "5 A":
+            print ("Change current range to 5 A")
+            MODEL_2304.write(':SENSe:CURRent:RANGe MAXimum')
+            pass
+        if self.ui.comboBoxCurrentRange.currentText() == "500 mA":
+            print("Change current range to 500 mA")
+            MODEL_2304.write(':SENSe:CURRent:RANGe MINimum')
+            pass
         pass
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = MyForm()
+    w.setWindowTitle("Ginno Keithley Tool")
     w.show()
     sys.exit(app.exec_())
