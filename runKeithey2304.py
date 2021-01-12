@@ -44,9 +44,11 @@ class recordThread(threading.Thread):
             MODEL_2304.write(':OUTPut:STATe %d' % (1))
             MODEL_2304.write(':DISPlay:ENABle OFF')
             # Config data output while executing READ? command
-            MODEL_2304.write(':FORMart:CURRent?')
+            #MODEL_2304.write(':FORMart:CURRent?')
             # Change current range following the configuration
             w.change_current_range()
+            # Set function is current measurement, It makes the READ? command will return Current value
+            MODEL_2304.write(':SENSe:FUNCtion \'CURRent\'')
             curr_data = createList(sampleNumber)
             i = 0
             start = time.time_ns()

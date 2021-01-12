@@ -1,4 +1,5 @@
 .idea/
 __pycache__/
 venv/
+Log/
 keithley2304.ui
